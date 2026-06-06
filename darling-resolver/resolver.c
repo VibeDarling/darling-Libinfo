@@ -202,12 +202,14 @@ dr_addrinfo(si_mod_t *si, const void *node, const void *serv, uint32_t family, u
 		servPort = *(uint16_t *)serv;
 	else
 	{
-		if (_gai_serv_to_port(serv, proto, &servPort) != 0)
+		uint16_t shortServPort = 0;
+		if (_gai_serv_to_port(serv, proto, &shortServPort) != 0)
 		{
 			if (err)
 				*err = SI_STATUS_EAI_NONAME;
 			return NULL;
 		}
+		servPort = shortServPort;
 	}
 	
 	if (flags & AI_NUMERICHOST)
