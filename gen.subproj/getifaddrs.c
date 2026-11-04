@@ -100,7 +100,6 @@ getifaddrs(struct ifaddrs **pif)
 {
 	int icnt = 1;
 
-	darling_kprintf("getifaddrs: ENTER\n");
 	int dcnt = 0;
 	int ncnt = 0;
 	struct ifaddrs *ifa, *ift;
@@ -138,9 +137,7 @@ getifaddrs(struct ifaddrs **pif)
 	mib[3] = 0;             /* wildcard address family */
 	mib[4] = NET_RT_IFLIST;
 	mib[5] = 0;             /* no flags */
-	darling_kprintf("getifaddrs: before first sysctl\n");
-	if (sysctl(mib, 6, NULL, &needed, NULL, 0) < 0) { darling_kprintf("getifaddrs: first sysctl failed, returning -1\n"); return (-1); }
-	darling_kprintf("getifaddrs: first sysctl OK needed=%zu\n", needed);
+	if (sysctl(mib, 6, NULL, &needed, NULL, 0) < 0) return (-1);
 
 	if (needed < MEMORY_MIN) needed = MEMORY_MIN;
 	needed *= 2;
@@ -148,27 +145,29 @@ getifaddrs(struct ifaddrs **pif)
 
 	buf = NULL;
 
-	while (needed <= MEMORY_MAX)
+	/* Darling: the size asked for is kept apart from `needed`, which a failed
+	 * sysctl may set to anything: when it set it smaller, this doubled the
+	 * same small size forever (launchd spun here on Android). And only a
+	 * buffer that is too small is worth another try. */
+	for (size_t want = needed; want <= MEMORY_MAX; want *= 2)
 	{
-		buf = malloc(needed);
+		buf = malloc(want);
 		if (buf == NULL) return (-1);
 
+		needed = want;
 		status = sysctl(mib, 6, buf, &needed, NULL, 0);
-		if (status >= 0) { darling_kprintf("getifaddrs: second sysctl OK needed=%zu\n", needed); break; }
-		darling_kprintf("getifaddrs: second sysctl failed, doubling needed=%zu\n", needed);
+		if (status >= 0) break;
 
 		free(buf);
 		buf = NULL;
-		needed *= 2;
+		if (errno != ENOMEM) return (-1);
 	}
 
 	if (buf == NULL)
 	{
 		errno = ENOBUFS;
-		darling_kprintf("getifaddrs: buf==NULL, ENOBUFS\n");
 		return (-1);
 	}
-	darling_kprintf("getifaddrs: parsing %zu bytes\n", needed);
 
 	for (next = buf; next < buf + needed; next += rtm->rtm_msglen) {
 		/* All route messages share only length, version, and type. Address
